@@ -1,0 +1,58 @@
+diff --git a/bsd/dev/sweet_touch.c b/bsd/dev/sweet_touch.c
+--- a/bsd/dev/sweet_touch.c
++++ b/bsd/dev/sweet_touch.c
+@@ -549,8 +549,15 @@
+ touch_thread(void *arg, wait_result_t result)
+ {
+ 	unsigned delay_s = 45;
++	/* POLARIS diagnostics: override the sweet addresses from boot-args. */
++	uint64_t se_pa = TOUCH_SE_PA;
++	uint64_t gpio_pa = TOUCH_NORTH_PA;
++	int dumponly = 0;
+ 	(void)arg;
+ 	(void)result;
++	(void)PE_parse_boot_argn("sweetsebase", &se_pa, sizeof(se_pa));
++	(void)PE_parse_boot_argn("sweetgpiobase", &gpio_pa, sizeof(gpio_pa));
++	(void)PE_parse_boot_argn("sweettouchdump", &dumponly, sizeof(dumponly));
+ 	/*
+ 	 * Start late (boot-arg sweettouchdelay, seconds): if the bus access
+ 	 * below hangs the SoC, the persistent log and the GUI got there first.
+@@ -560,10 +567,36 @@
+ 	touch_wait(delay_s * 1000u);
+ 	printf("SWEET TOUCH: mapping GCC/TLMM/SE7\n");
+ 	st.gcc = ml_io_map(TOUCH_GCC_PA, 0x60000);
+-	st.gpio = ml_io_map(TOUCH_NORTH_PA, 0x5b000);
+-	st.se = ml_io_map(TOUCH_SE_PA, 0x4000);
++	st.gpio = ml_io_map((vm_offset_t)gpio_pa, 0x100000);
++	st.se = ml_io_map((vm_offset_t)se_pa, 0x4000);
+ 	if (!st.gcc || !st.gpio || !st.se) {
+ 		printf("SWEET TOUCH: MMIO mapping failed\n");
++		goto out;
++	}
++	printf("SWEET TOUCH: bases se=%#llx gpio=%#llx gcc=%#x\n",
++	    se_pa, gpio_pa, TOUCH_GCC_PA);
++	if (dumponly) {
++		/* Read-only snapshot: which protocol is the SE in, and are the
++		 * polaris pins (33/34 SDA/SCL, 99 reset, 125 irq, 23 tp_vddio) set up? */
++		uint32_t fw = touch_rd(st.se, SE_FW);
++		printf("SWEET TOUCH DUMP se status=%#x fw=%#x proto=%u gens=%#x "
++		    "clksel=%#x mclk=%#x scl=%#x hw_tx=%#x hw_rx=%#x "
++		    "txc=%#x rxc=%#x irq_en=%#x dma=%#x\n",
++		    touch_rd(st.se, SE_STATUS), fw, (fw >> 8) & 0xffu,
++		    touch_rd(st.se, 0x64), touch_rd(st.se, SE_CLK_SEL),
++		    touch_rd(st.se, SE_MCLK), touch_rd(st.se, SE_SCL),
++		    touch_rd(st.se, SE_HW_TX), touch_rd(st.se, SE_HW_RX),
++		    touch_rd(st.se, SE_TX_COUNT) & 0xffffffu,
++		    touch_rd(st.se, SE_RX_COUNT) & 0x1ffffffu,
++		    touch_rd(st.se, SE_IRQ_EN), touch_rd(st.se, SE_DMA));
++		const unsigned pins[] = { 23, 33, 34, 99, 125 };
++		for (unsigned i = 0; i < sizeof(pins) / sizeof(pins[0]); ++i) {
++			printf("SWEET TOUCH DUMP gpio %u cfg=%#x io=%#x\n", pins[i],
++			    touch_rd(st.gpio, TOUCH_GPIO_CFG(pins[i])),
++			    touch_rd(st.gpio, TOUCH_GPIO_IO(pins[i])));
++		}
++		printf("SWEET TOUCH DUMP gcc rcg7=%#x rcg7c=%#x\n",
++		    touch_rd(st.gcc, TOUCH_RCG), touch_rd(st.gcc, TOUCH_RCG + 4u));
+ 		goto out;
+ 	}
+ 	if (!touch_clocks() || !touch_se_init()) {
