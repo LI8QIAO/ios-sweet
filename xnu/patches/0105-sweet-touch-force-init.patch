@@ -1,0 +1,51 @@
+diff --git a/bsd/dev/sweet_touch.c b/bsd/dev/sweet_touch.c
+--- a/bsd/dev/sweet_touch.c
++++ b/bsd/dev/sweet_touch.c
+@@ -490,12 +490,20 @@
+ static bool
+ touch_se_init(void)
+ {
+-	uint32_t fw = touch_rd(st.se, SE_FW);
+-	uint32_t tx = touch_rd(st.se, SE_HW_TX), rx = touch_rd(st.se, SE_HW_RX);
++	int force = 0;
++	uint32_t fw, tx, rx;
++	(void)PE_parse_boot_argn("sweetforcetouch", &force, sizeof(force));
++	fw = touch_rd(st.se, SE_FW);
++	tx = touch_rd(st.se, SE_HW_TX);
++	rx = touch_rd(st.se, SE_HW_RX);
+ 	printf("SWEET TOUCH: se7 fw=%#x proto=%u status=%#x tx=%#x rx=%#x ios=%#x\n",
+ 	    fw, (fw >> 8) & 0xffu, touch_rd(st.se, SE_STATUS), tx, rx,
+ 	    touch_rd(st.se, 0x908));
+-	if (((fw >> 8) & 0xffu) != 3u || (touch_rd(st.se, 0x64) & 1u) ||
++	if (force) {
++		printf("SWEET TOUCH: forcing init over GENI_IF_DISABLE (%#x)\n",
++		    touch_rd(st.se, 0x64));
++	}
++	if (((fw >> 8) & 0xffu) != 3u || (!force && (touch_rd(st.se, 0x64) & 1u)) ||
+ 	    ((tx >> 24) & 0x3fu) != 32u || ((rx >> 24) & 0x3fu) != 32u ||
+ 	    ((tx >> 16) & 0x3fu) < 2u || ((rx >> 16) & 0x3fu) < 2u) {
+ 		printf("SWEET TOUCH: need ABL-loaded I2C firmware and 32-bit FIFOs; probes skipped\n");
+@@ -595,6 +603,23 @@
+ 			    touch_rd(st.gpio, TOUCH_GPIO_CFG(pins[i])),
+ 			    touch_rd(st.gpio, TOUCH_GPIO_IO(pins[i])));
+ 		}
++		{
++			/* Which window actually answers on polaris? */
++			vm_offset_t alt = ml_io_map(0x03900000, 0x100000);
++			if (alt) {
++				printf("SWEET TOUCH DUMP gpio-alt@0x3900000 "
++				    "23=%#x 33=%#x 34=%#x 99=%#x 125=%#x\n",
++				    touch_rd(alt, TOUCH_GPIO_CFG(23)), touch_rd(alt, TOUCH_GPIO_CFG(33)),
++				    touch_rd(alt, TOUCH_GPIO_CFG(34)), touch_rd(alt, TOUCH_GPIO_CFG(99)),
++				    touch_rd(alt, TOUCH_GPIO_CFG(125)));
++			}
++			printf("SWEET TOUCH DUMP raw@0x3400000 0=%#x 1000=%#x 17000=%#x "
++			    "21000=%#x 22000=%#x 63000=%#x 7d000=%#x\n",
++			    touch_rd(st.gpio, 0), touch_rd(st.gpio, 0x1000),
++			    touch_rd(st.gpio, 0x17000), touch_rd(st.gpio, 0x21000),
++			    touch_rd(st.gpio, 0x22000), touch_rd(st.gpio, 0x63000),
++			    touch_rd(st.gpio, 0x7d000));
++		}
+ 		/* Only touch the sequencer when the SE already speaks I2C: the
+ 		 * polaris bus (0xa98000) is the one ABL configured for touch. */
+ 		if (probe && proto == 3u && !(touch_rd(st.se, SE_STATUS) & 0x1001u)) {
