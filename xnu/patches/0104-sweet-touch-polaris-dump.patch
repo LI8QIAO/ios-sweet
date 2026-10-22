@@ -1,23 +1,24 @@
 diff --git a/bsd/dev/sweet_touch.c b/bsd/dev/sweet_touch.c
 --- a/bsd/dev/sweet_touch.c
 +++ b/bsd/dev/sweet_touch.c
-@@ -549,8 +549,15 @@
+@@ -549,8 +549,16 @@
  touch_thread(void *arg, wait_result_t result)
  {
  	unsigned delay_s = 45;
 +	/* POLARIS diagnostics: override the sweet addresses from boot-args. */
 +	uint64_t se_pa = TOUCH_SE_PA;
 +	uint64_t gpio_pa = TOUCH_NORTH_PA;
-+	int dumponly = 0;
++	int dumponly = 0, probe = 0;
  	(void)arg;
  	(void)result;
 +	(void)PE_parse_boot_argn("sweetsebase", &se_pa, sizeof(se_pa));
 +	(void)PE_parse_boot_argn("sweetgpiobase", &gpio_pa, sizeof(gpio_pa));
 +	(void)PE_parse_boot_argn("sweettouchdump", &dumponly, sizeof(dumponly));
++	(void)PE_parse_boot_argn("sweettouchprobe", &probe, sizeof(probe));
  	/*
  	 * Start late (boot-arg sweettouchdelay, seconds): if the bus access
  	 * below hangs the SoC, the persistent log and the GUI got there first.
-@@ -560,10 +567,36 @@
+@@ -560,10 +568,55 @@
  	touch_wait(delay_s * 1000u);
  	printf("SWEET TOUCH: mapping GCC/TLMM/SE7\n");
  	st.gcc = ml_io_map(TOUCH_GCC_PA, 0x60000);
@@ -31,14 +32,13 @@ diff --git a/bsd/dev/sweet_touch.c b/bsd/dev/sweet_touch.c
 +	}
 +	printf("SWEET TOUCH: bases se=%#llx gpio=%#llx gcc=%#x\n",
 +	    se_pa, gpio_pa, TOUCH_GCC_PA);
-+	if (dumponly) {
-+		/* Read-only snapshot: which protocol is the SE in, and are the
-+		 * polaris pins (33/34 SDA/SCL, 99 reset, 125 irq, 23 tp_vddio) set up? */
++	if (dumponly || probe) {
 +		uint32_t fw = touch_rd(st.se, SE_FW);
++		uint32_t proto = (fw >> 8) & 0xffu;
 +		printf("SWEET TOUCH DUMP se status=%#x fw=%#x proto=%u gens=%#x "
 +		    "clksel=%#x mclk=%#x scl=%#x hw_tx=%#x hw_rx=%#x "
 +		    "txc=%#x rxc=%#x irq_en=%#x dma=%#x\n",
-+		    touch_rd(st.se, SE_STATUS), fw, (fw >> 8) & 0xffu,
++		    touch_rd(st.se, SE_STATUS), fw, proto,
 +		    touch_rd(st.se, 0x64), touch_rd(st.se, SE_CLK_SEL),
 +		    touch_rd(st.se, SE_MCLK), touch_rd(st.se, SE_SCL),
 +		    touch_rd(st.se, SE_HW_TX), touch_rd(st.se, SE_HW_RX),
@@ -51,8 +51,28 @@ diff --git a/bsd/dev/sweet_touch.c b/bsd/dev/sweet_touch.c
 +			    touch_rd(st.gpio, TOUCH_GPIO_CFG(pins[i])),
 +			    touch_rd(st.gpio, TOUCH_GPIO_IO(pins[i])));
 +		}
-+		printf("SWEET TOUCH DUMP gcc rcg7=%#x rcg7c=%#x\n",
-+		    touch_rd(st.gcc, TOUCH_RCG), touch_rd(st.gcc, TOUCH_RCG + 4u));
++		/* Only touch the sequencer when the SE already speaks I2C: the
++		 * polaris bus (0xa98000) is the one ABL configured for touch. */
++		if (probe && proto == 3u && !(touch_rd(st.se, SE_STATUS) & 0x1001u)) {
++			if (touch_se_init()) {
++				/* RMI4/D22 style: write the register address, repeated
++				 * start, read. Probe both MIX 2S touch variants. */
++				uint8_t syn[8] = { 0 }, ft[8] = { 0 };
++				int e20 = touch_read(0x20, 0x00, false, syn, sizeof(syn));
++				printf("SWEET TOUCH PROBE 0x20 (synaptics rmi4) err=%d "
++				    "data=%02x %02x %02x %02x %02x %02x irq=%#x\n",
++				    e20, syn[0], syn[1], syn[2], syn[3], syn[4], syn[5],
++				    st.irq_status);
++				int e38 = touch_read(0x38, 0xa3, false, ft, 1);
++				printf("SWEET TOUCH PROBE 0x38 (focaltech id) err=%d "
++				    "id=%02x irq=%#x\n", e38, ft[0], st.irq_status);
++			} else {
++				printf("SWEET TOUCH PROBE: SE init failed, no probe\n");
++			}
++		} else if (probe) {
++			printf("SWEET TOUCH PROBE: skipped (proto=%u busy=%d)\n",
++			    proto, !!(touch_rd(st.se, SE_STATUS) & 0x1001u));
++		}
  		goto out;
  	}
  	if (!touch_clocks() || !touch_se_init()) {
