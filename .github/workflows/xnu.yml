@@ -30,7 +30,9 @@ env:
   DXB_SHA: 663906528d1cd5ea8fde7de6f16de73db9511549
   MACOS_VERSION: ${{ inputs.macos_version || '13.5' }}
   KERNEL_CONFIG: ${{ inputs.kernel_config || 'DEVELOPMENT' }}
-  MACHINE_CONFIG: ${{ inputs.machine_config || 'SWEET' }}
+  # A push-triggered run has no inputs, so this fallback decides what gets
+  # built. This fork targets polaris; SWEET stays reachable via manual dispatch.
+  MACHINE_CONFIG: ${{ inputs.machine_config || 'POLARIS' }}
 
 jobs:
   build:
@@ -72,7 +74,17 @@ jobs:
         env:
           # keep going after errors so one run reports every compile failure
           MAKEFLAGS: ${{ inputs.keep_going == 'false' && '' || '-k' }}
-        run: bash build.sh
+        run: |
+          set -o pipefail
+          bash build.sh 2>&1 | tee build.log
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xnu-build-log
+          path: dxb/build.log
+          if-no-files-found: warn
 
       - name: Package build tree for local compiles
         if: always()
