@@ -32,7 +32,7 @@ diff --git a/osfmk/kern/exception.c b/osfmk/kern/exception.c
  void
  sweet_crash_log(const char *name, int pid, int sig, uint64_t code, uint64_t subcode)
  {
-@@ -894,6 +918,35 @@
+@@ -894,6 +918,37 @@
  	}
  	if (sig == 6 || sig == 5) {
  		sweet_crash_strings(name);
@@ -44,25 +44,27 @@ diff --git a/osfmk/kern/exception.c b/osfmk/kern/exception.c
 +	 * last thing on screen. boot-arg sweet_freeze_on_crash=1, optionally
 +	 * narrowed with sweet_freeze_names=a,b. Power cycle to reboot.
 +	 */
-+	int sweet_freeze = 0;
++	{
++		int sweet_freeze = 0;
 +
-+	if (PE_parse_boot_argn("sweet_freeze_on_crash", &sweet_freeze,
-+	    sizeof(sweet_freeze)) && sweet_freeze != 0) {
-+		char sweet_freeze_names[128];
-+		bool wanted = true;
++		if (PE_parse_boot_argn("sweet_freeze_on_crash", &sweet_freeze,
++		    sizeof(sweet_freeze)) && sweet_freeze != 0) {
++			char sweet_freeze_names[128];
++			bool wanted = true;
 +
-+		if (PE_parse_boot_argn("sweet_freeze_names", sweet_freeze_names,
-+		    sizeof(sweet_freeze_names))) {
-+			wanted = sweet_name_in_list(sweet_freeze_names, name);
-+		}
-+		if (wanted) {
-+			volatile int sweet_spin = 0;
++			if (PE_parse_boot_argn("sweet_freeze_names",
++			    sweet_freeze_names, sizeof(sweet_freeze_names))) {
++				wanted = sweet_name_in_list(sweet_freeze_names, name);
++			}
++			if (wanted) {
++				volatile int sweet_spin = 0;
 +
-+			printf("SWEET: frozen on %s crash above "
-+			    "(sweet_freeze_on_crash) -- power cycle to reboot\n",
-+			    name);
-+			for (;;) {
-+				sweet_spin = sweet_spin + 1;
++				printf("SWEET: frozen on %s crash above "
++				    "(sweet_freeze_on_crash) -- power cycle to reboot\n",
++				    name);
++				for (;;) {
++					sweet_spin = sweet_spin + 1;
++				}
 +			}
 +		}
  	}
