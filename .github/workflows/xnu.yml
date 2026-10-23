@@ -1,4 +1,4 @@
-name: xnu
+﻿name: xnu
 
 on:
   workflow_dispatch:
@@ -32,7 +32,7 @@ env:
   KERNEL_CONFIG: ${{ inputs.kernel_config || 'DEVELOPMENT' }}
   # A push-triggered run has no inputs, so this fallback decides what gets
   # built. This fork targets polaris; SWEET stays reachable via manual dispatch.
-  MACHINE_CONFIG: ${{ inputs.machine_config || 'POLARIS' }}
+  MACHINE_CONFIG: ${{ inputs.machine_config || 'SWEET' }}
 
 jobs:
   build:
